@@ -76,7 +76,7 @@ export default function App() {
       const response = await fetch("/api/poem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, lang })
       });
 
       if (!response.ok) {

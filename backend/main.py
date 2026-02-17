@@ -32,6 +32,7 @@ _client = OpenAI()
 
 class PoemRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
+    lang: str = "ru"
 
 
 class PoemResponse(BaseModel):
@@ -92,7 +93,13 @@ _STOP_WORDS = {
 }
 
 
-def _extract_keywords(text: str, limit: int = 8) -> List[str]:
+def _extract_keywords(text: str, limit: int = 12) -> List[str]:
+    # Prefer comma-separated phrases; fall back to word extraction if none found.
+    phrases = [chunk.strip() for chunk in text.split(",") if chunk.strip()]
+    if phrases:
+        normalized = [" ".join(p.split()) for p in phrases]
+        return normalized[:limit]
+
     words = []
     current = []
     for ch in text.lower():
@@ -114,56 +121,97 @@ def _extract_keywords(text: str, limit: int = 8) -> List[str]:
     return ranked[:limit]
 
 
-def _compose_poem(prompt: str) -> PoemResponse:
+def _compose_poem(prompt: str, lang: str) -> PoemResponse:
     keywords = _extract_keywords(prompt)
 
     if not keywords:
-        poem = (
-            "Ты шепнул(а) пустоту — и она отозвалась.\n"
-            "Меж строк растет дыхание, как медленный рассвет.\n"
-            "Я собираю смысл из хрупких пауз и тишин,\n"
-            "И мир становится стихом, когда ты рядом есть."
-        )
+        if lang == "en":
+            poem = (
+                "You whispered into quiet, and it answered back.\n"
+                "Between the lines, a slow dawn starts to breathe.\n"
+                "I gather meaning from the fragile pauses,\n"
+                "And the world becomes a poem when you're near."
+            )
+        else:
+            poem = (
+                "Ты шепнул(а) пустоту — и она отозвалась.\n"
+                "Меж строк растет дыхание, как медленный рассвет.\n"
+                "Я собираю смысл из хрупких пауз и тишин,\n"
+                "И мир становится стихом, когда ты рядом есть."
+            )
         return PoemResponse(poem=poem, used_words=[], source="fallback")
 
     # Build a short free-verse poem with user keywords woven in.
-    line1 = f"В словах твоих звучит: {', '.join(keywords[:3])}."
-    line2 = (
-        f"Я вижу, как {keywords[0]} ищет свет,"
-        if len(keywords) > 1
-        else f"Я вижу, как {keywords[0]} ищет свет,"
-    )
-    line3 = (
-        f"а {keywords[1]} держит ритм, как тихий берег,"
-        if len(keywords) > 2
-        else "а ветер держит ритм, как тихий берег,"
-    )
-    line4 = (
-        f"и {keywords[2]} ложится в строки мягким снегом."
-        if len(keywords) > 3
-        else "и слово ложится в строки мягким снегом."
-    )
+    if lang == "en":
+        line1 = f"In your words I hear: {', '.join(keywords[:3])}."
+        line2 = (
+            f"I watch how {keywords[0]} looks for light,"
+            if len(keywords) > 1
+            else f"I watch how {keywords[0]} looks for light,"
+        )
+        line3 = (
+            f"while {keywords[1]} keeps the rhythm like a quiet shore,"
+            if len(keywords) > 2
+            else "while the wind keeps rhythm like a quiet shore,"
+        )
+        line4 = (
+            f"and {keywords[2]} falls into lines like gentle snow."
+            if len(keywords) > 3
+            else "and a word falls into lines like gentle snow."
+        )
 
-    tail_words = keywords[3:]
-    if tail_words:
-        line5 = f"Пусть будут рядом: {', '.join(tail_words)} — как огни."
+        tail_words = keywords[3:]
+        if tail_words:
+            line5 = f"Let these stay nearby: {', '.join(tail_words)} — like lights."
+        else:
+            line5 = "Let simple lights of hope stay close."
     else:
-        line5 = "Пусть будут рядом простые огни надежды."
+        line1 = f"В словах твоих звучит: {', '.join(keywords[:3])}."
+        line2 = (
+            f"Я вижу, как {keywords[0]} ищет свет,"
+            if len(keywords) > 1
+            else f"Я вижу, как {keywords[0]} ищет свет,"
+        )
+        line3 = (
+            f"а {keywords[1]} держит ритм, как тихий берег,"
+            if len(keywords) > 2
+            else "а ветер держит ритм, как тихий берег,"
+        )
+        line4 = (
+            f"и {keywords[2]} ложится в строки мягким снегом."
+            if len(keywords) > 3
+            else "и слово ложится в строки мягким снегом."
+        )
+
+        tail_words = keywords[3:]
+        if tail_words:
+            line5 = f"Пусть будут рядом: {', '.join(tail_words)} — как огни."
+        else:
+            line5 = "Пусть будут рядом простые огни надежды."
 
     poem = "\n".join([line1, line2, line3, line4, line5])
     return PoemResponse(poem=poem, used_words=keywords, source="fallback")
 
 
-def _compose_poem_llm(prompt: str) -> PoemResponse:
+def _compose_poem_llm(prompt: str, lang: str) -> PoemResponse:
     keywords = _extract_keywords(prompt)
     keywords_text = ", ".join(keywords) if keywords else "нет"
 
-    instructions = (
-        "Ты поэт. Напиши короткий свободный стих на русском (4–8 строк), "
-        "используя слова и идеи из промпта. Сохраняй образность и мягкий ритм. "
-        "Не добавляй заголовок, не используй списки."
-    )
-    user_input = f"Промпт: {prompt}\nКлючевые слова: {keywords_text}"
+    if lang == "en":
+        instructions = (
+            "You are a poet. Write a short rhymed poem in English (4–8 lines), "
+            "using words and ideas from the prompt. Aim for clear end rhymes in most lines, "
+            "keep imagery and a gentle rhythm. No title, no lists."
+        )
+        user_input = f"Prompt: {prompt}\nKeywords: {keywords_text}"
+    else:
+        instructions = (
+            "Ты поэт. Напиши короткий рифмованный стих на русском (4–8 строк), "
+            "используя слова и идеи из промпта. Постарайся, чтобы большинство строк "
+            "заканчивались явной рифмой, сохраняй образность и мягкий ритм. "
+            "Не добавляй заголовок, не используй списки."
+        )
+        user_input = f"Промпт: {prompt}\nКлючевые слова: {keywords_text}"
 
     response = _client.responses.create(
         model=_MODEL,
@@ -176,19 +224,20 @@ def _compose_poem_llm(prompt: str) -> PoemResponse:
     poem = response.output_text.strip()
     if not poem:
         logger.warning("LLM returned empty output; falling back.")
-        return _compose_poem(prompt)
+        return _compose_poem(prompt, lang)
 
     return PoemResponse(poem=poem, used_words=keywords, source="llm")
 
 
 @app.post("/api/poem", response_model=PoemResponse)
 async def generate_poem(payload: PoemRequest) -> PoemResponse:
+    lang = payload.lang if payload.lang in {"ru", "en"} else "ru"
     try:
-        return _compose_poem_llm(payload.prompt)
+        return _compose_poem_llm(payload.prompt, lang)
     except Exception as exc:
         # Fallback to a local generator if the LLM call fails.
         logger.exception("LLM call failed; using fallback.", exc_info=exc)
-        return _compose_poem(payload.prompt)
+        return _compose_poem(payload.prompt, lang)
 
 
 @app.get("/health")
